@@ -2,8 +2,8 @@ class CreateTransactions < ActiveRecord::Migration[7.2]
   def change
     create_table :transactions do |t|
       t.integer :amount
-      t.references :source_wallet_id, null: false
-      t.references :target_wallet_id, null: false
+      t.integer :source_wallet_id
+      t.integer :target_wallet_id
       t.integer :transaction_type
 
       t.timestamps
