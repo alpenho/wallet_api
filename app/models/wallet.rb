@@ -4,37 +4,46 @@ class Wallet < ApplicationRecord
                             foreign_key: 'source_wallet_id'
   has_many :incoming_transactions, class_name: 'Transaction',
                             foreign_key: 'target_wallet_id'
-
-  def balance
-    sum_incoming_amount - sum_outgoing_amount
-  end
+  
+  validates :name, presence: true
 
   def deposit!(amount)
-    trx = TransactionDeposit.new(amount: amount, target_wallet: self)
-    trx.save!
+    ActiveRecord::Base.transaction do
+      # Lock the wallet row for this user to prevent other operations
+      wallet = Wallet.where(id: self.id).lock(true).first
+      trx = TransactionDeposit.new(amount: amount, target_wallet: wallet)
+
+      trx.save!
+      wallet.update!(balance: wallet.balance + amount) # Update balance
+    end
   end
 
   def withdraw!(amount)
-    raise Error('Insufficient amount') if balance < amount
+    ActiveRecord::Base.transaction do
+      # Lock the wallet row for this user to prevent other operations
+      wallet = Wallet.where(id: self.id).lock(true).first
+      trx = TransactionWithdraw.new(amount: amount, source_wallet: wallet)
 
-    trx = TransactionWithdraw.new(amount: amount, source_wallet: self)
-    trx.save!
+      raise 'Insufficient amount' if wallet.balance < amount
+
+      trx.save!
+      wallet.update!(balance: wallet.balance - amount) # Update balance
+    end
   end
 
-  def transfer!(amount, target_wallet)
-    raise Error('Insufficient amount') if balance < amount
+  def transfer!(amount, target_wallet_id)
+    ActiveRecord::Base.transaction do
+      # Lock the wallet row for this user to prevent other operations
+      target_wallet = Wallet.where(id: target_wallet_id).lock(true).first
+      wallet = Wallet.where(id: self.id).lock(true).first
+      trx = TransactionTransfer.new(amount: amount, source_wallet: wallet, target_wallet: target_wallet)
 
-    trx = TransactionTransfer.new(amount: amount, source_wallet: self, target_wallet: target_wallet)
-    trx.save!
-  end
+      raise 'Target wallet not found' if target_wallet.blank?
+      raise 'Insufficient amount' if wallet.balance < amount
 
-  private
-
-  def sum_outgoing_amount
-    self.outgoing_transactions.inject(0){ |sum, trx| sum + trx.amount }
-  end
-
-  def sum_incoming_amount
-    self.incoming_transactions.inject(0){ |sum, trx| sum + trx.amount }
+      trx.save!
+      wallet.update!(balance: wallet.balance - amount) # Update balance
+      target_wallet.update!(balance: target_wallet.balance + amount) # Update target wallet balance
+    end
   end
 end
