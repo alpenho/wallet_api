@@ -31,10 +31,10 @@ class Wallet < ApplicationRecord
     end
   end
 
-  def transfer!(amount, target_wallet_id)
+  def transfer!(amount, target_account_number)
     ActiveRecord::Base.transaction do
       # Lock the wallet row for this user to prevent other operations
-      target_wallet = Wallet.where(id: target_wallet_id).lock(true).first
+      target_wallet = Wallet.where(account_number: target_account_number).lock(true).first
       wallet = Wallet.where(id: self.id).lock(true).first
       trx = TransactionTransfer.new(amount: amount, source_wallet: wallet, target_wallet: target_wallet)
 

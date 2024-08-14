@@ -1,21 +1,23 @@
 class WalletsController < ApplicationController
-  before_action :set_wallet, only: %i[ show update destroy ]
+  before_action :require_login
 
   # GET /wallets
   def index
-    @wallets = Wallet.all
+    @wallets = Wallet.where(owner: current_user)
 
     render json: @wallets
   end
 
   # GET /wallets/1
   def show
+    @wallet = Wallet.find_by(id: params[:id], owner: current_user) # need to handle if not found
     render json: @wallet
   end
 
   # POST /wallets
   def create
-    @wallet = Wallet.new(wallet_params)
+    account_number = AccountNumberGenerator.generate(current_user)
+    @wallet = Wallet.new(name: wallet_params[:name], account_number: account_number, owner: current_user)
 
     if @wallet.save
       render json: @wallet, status: :created, location: @wallet
@@ -24,28 +26,67 @@ class WalletsController < ApplicationController
     end
   end
 
-  # PATCH/PUT /wallets/1
-  def update
-    if @wallet.update(wallet_params)
-      render json: @wallet
-    else
-      render json: @wallet.errors, status: :unprocessable_entity
+  def deposit
+    begin
+      wallet = Wallet.find_by(id: params[:id], owner: current_user)
+      raise 'Wallet not found' if wallet.blank?
+
+      wallet.deposit!(deposit_and_withdraw_params[:amount])
+      render json: { success: true, message: 'OK' }, status: :ok
+    rescue => e
+      render json: { success: false, message: e.message }, status: :unprocessable_entity
     end
   end
 
-  # DELETE /wallets/1
-  def destroy
-    @wallet.destroy!
+  def withdraw
+    begin
+      wallet = Wallet.find_by(id: params[:id], owner: current_user)
+      raise 'Wallet not found' if wallet.blank?
+
+      wallet.withdraw!(deposit_and_withdraw_params[:amount])
+      render json: { success: true, message: 'OK' }, status: :ok
+    rescue => e
+      render json: { success: false, message: e.message }, status: :unprocessable_entity
+    end
   end
+
+  def transfer
+    begin
+      wallet = Wallet.find_by(id: params[:id], owner: current_user)
+      raise 'Wallet not found' if wallet.blank?
+
+      wallet.transfer!(transfer_params[:amount], transfer_params[:target_account_number])
+      render json: { success: true, message: 'OK' }, status: :ok
+    rescue => e
+      render json: { success: false, message: e.message }, status: :unprocessable_entity
+    end
+  end
+
+  # # PATCH/PUT /wallets/1
+  # def update
+  #   if @wallet.update(wallet_params)
+  #     render json: @wallet
+  #   else
+  #     render json: @wallet.errors, status: :unprocessable_entity
+  #   end
+  # end
+
+  # # DELETE /wallets/1
+  # def destroy
+  #   @wallet.destroy!
+  # end
 
   private
-    # Use callbacks to share common setup or constraints between actions.
-    def set_wallet
-      @wallet = Wallet.find(params[:id])
-    end
-
     # Only allow a list of trusted parameters through.
     def wallet_params
-      params.require(:wallet).permit(:account_number, :owner_id, :owner_type)
+      params.require(:wallet).permit(:name)
+    end
+
+    def transfer_params
+      params.permit(:target_account_number, :amount)
+    end
+
+    def deposit_and_withdraw_params
+      params.permit(:amount)
     end
 end
